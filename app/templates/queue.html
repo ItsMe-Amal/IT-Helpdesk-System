@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Queue — Service Desk{% endblock %}
+
+{% block content %}
+<h1>{% if user.role == "requester" %}My tickets{% else %}Ticket queue{% endif %}</h1>
+<p class="subtitle">
+  {{ rows | length }} ticket{{ '' if rows | length == 1 else 's' }}
+  · sorted by priority, then age
+</p>
+
+<div class="card">
+  <form method="get" action="/queue" class="row">
+    <div>
+      <label>Status</label>
+      <select name="status" onchange="this.form.submit()">
+        <option value="">All open</option>
+        {% for s in statuses %}
+          <option value="{{ s.value }}" {% if s.value == status %}selected{% endif %}>
+            {{ s.value | replace('_', ' ') | title }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Priority</label>
+      <select name="priority" onchange="this.form.submit()">
+        <option value="">Any</option>
+        {% for p in [1, 2, 3, 4] %}
+          <option value="{{ p }}" {% if p == priority %}selected{% endif %}>P{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if user.role in ("technician", "manager") %}
+    <div>
+      <label>Assignment</label>
+      <select name="unassigned" onchange="this.form.submit()">
+        <option value="">Everyone</option>
+        <option value="1" {% if unassigned %}selected{% endif %}>Unassigned only</option>
+      </select>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Reference</th>
+      <th>Priority</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Requester</th>
+      <th>Assignee</th>
+      <th>Raised</th>
+      <th>SLA</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set t = row.ticket %}
+    <tr>
+      <td class="ref"><a href="/tickets/{{ t.id }}">{{ t.reference }}</a></td>
+      <td><span class="pill p{{ t.priority }}">P{{ t.priority }}</span></td>
+      <td class="title">{{ t.title }}</td>
+      <td><span class="status">{{ t.status.value | replace('_', ' ') | title }}</span></td>
+      <td>{{ t.requester.name }}</td>
+      <td>{{ t.assignee.name if t.assignee else "—" }}</td>
+      <td>{{ t.created_at | local_time }}</td>
+      <td>
+        <span class="sla sla-{{ row.sla.state }}">
+          {% if row.sla.state == "breached" %}Breached
+          {% elif row.sla.state == "met" %}Met
+          {% else %}{{ row.sla.remaining_minutes | duration }} left{% endif %}
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card empty">No tickets match these filters.</div>
+{% endif %}
+{% endblock %}

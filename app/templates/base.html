@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Service Desk{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+{% if user %}
+<header>
+  <span class="brand">Service Desk</span>
+  <nav>
+    <a href="/queue">Queue</a>
+    <a href="/tickets/new">Raise a ticket</a>
+    {% if user.role in ("technician", "manager") %}
+      <a href="/dashboard">Dashboard</a>
+    {% endif %}
+  </nav>
+  <span class="who">{{ user.name }} · {{ user.role }} · <a href="/logout">Sign out</a></span>
+</header>
+{% endif %}
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Service Desk{% endblock %}
+
+{% block content %}
+<h1>Service desk dashboard</h1>
+<p class="subtitle">Live queue health and SLA performance</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="value">{{ stats.open_count }}</div>
+    <div class="label">Open tickets</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ stats.unassigned }}</div>
+    <div class="label">Unassigned</div>
+  </div>
+  <div class="stat">
+    <div class="value" style="color:var(--warn)">{{ stats.at_risk }}</div>
+    <div class="label">SLA at risk</div>
+  </div>
+  <div class="stat">
+    <div class="value" style="color:var(--bad)">{{ stats.breached }}</div>
+    <div class="label">SLA breached</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:18px">
+  <h2 style="margin-top:0">SLA compliance</h2>
+  <p class="subtitle" style="margin-bottom:6px">
+    {{ stats.met }} of {{ stats.resolved_total }} resolved tickets met their target
+    — {{ stats.compliance }}%
+  </p>
+  <div class="bar"><span style="width: {{ stats.compliance }}%"></span></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Open tickets by priority</h2>
+  <table>
+    <thead>
+      <tr><th>Priority</th><th>Open</th><th>Resolution target</th></tr>
+    </thead>
+    <tbody>
+      {% for row in by_priority %}
+      <tr>
+        <td><span class="pill p{{ row.priority }}">P{{ row.priority }}</span></td>
+        <td>{{ row.count }}</td>
+        <td>{{ row.target }} business hours</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

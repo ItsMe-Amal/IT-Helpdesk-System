@@ -5,7 +5,7 @@ from app import models, schemas, sla, crud
 from app.database import get_db
 from app.deps import get_current_user, require_technician
 
-router = APIRouter(prefix="/tickets", tags=["Tickets"])
+router = APIRouter(prefix="/api/tickets", tags=["Tickets"])
 
 
 ALLOWED_TRANSITIONS = {

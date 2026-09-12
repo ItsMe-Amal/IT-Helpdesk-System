@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.reference }} — Service Desk{% endblock %}
+
+{% block content %}
+<h1>
+  <span class="pill p{{ ticket.priority }}">P{{ ticket.priority }}</span>
+  {{ ticket.title }}
+</h1>
+<p class="subtitle">{{ ticket.reference }} · raised by {{ ticket.requester.name }}
+   on {{ ticket.created_at | local_time("%d %b %Y at %H:%M") }}</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<div class="detail-grid">
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0">Description</h2>
+      <p>{{ ticket.description or "No description provided." }}</p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Activity</h2>
+      <ul class="timeline">
+        {% for event in events %}
+        <li>
+          <div class="when">{{ event.timestamp | local_time("%d %b %H:%M") }}</div>
+          <div class="what">
+            {% if event.event_type == "comment" %}
+              {{ event.detail }}
+            {% else %}
+              <strong>{{ event.event_type | replace('_', ' ') | title }}</strong>
+              {% if event.detail %}— {{ event.detail }}{% endif %}
+            {% endif %}
+          </div>
+          <div class="who">{{ event.actor.name if event.actor else "System" }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <form method="post" action="/tickets/{{ ticket.id }}/comments">
+        <label>Add a comment</label>
+        <textarea name="body" required
+                  placeholder="Update the requester on progress…"></textarea>
+        <button type="submit">Post comment</button>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0">Details</h2>
+      <dl class="meta">
+        <dt>Status</dt>
+        <dd><span class="status">{{ ticket.status.value | replace('_', ' ') | title }}</span></dd>
+
+        <dt>Impact</dt><dd>{{ ticket.impact.value | title }}</dd>
+        <dt>Urgency</dt><dd>{{ ticket.urgency.value | title }}</dd>
+        <dt>Category</dt><dd>{{ ticket.category or "—" }}</dd>
+        <dt>Assignee</dt><dd>{{ ticket.assignee.name if ticket.assignee else "Unassigned" }}</dd>
+
+        <dt>SLA</dt>
+        <dd>
+          <span class="sla sla-{{ sla.state }}">
+            {% if sla.state == "breached" %}Breached
+            {% elif sla.state == "met" %}Met on time
+            {% else %}{{ sla.remaining_minutes | duration }} remaining{% endif %}
+          </span>
+        </dd>
+
+        <dt>Resolve by</dt><dd>{{ sla.deadline | local_time("%d %b %H:%M") }}</dd>
+        <dt>First response</dt><dd>{{ ticket.first_response_at | local_time }}</dd>
+        <dt>Resolved</dt><dd>{{ ticket.resolved_at | local_time }}</dd>
+
+        {% if ticket.paused_seconds %}
+        <dt>Time on hold</dt>
+        <dd>{{ (ticket.paused_seconds // 60) | duration }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+
+    {% if user.role in ("technician", "manager") %}
+    <div class="card">
+      <h2 style="margin-top:0">Actions</h2>
+
+      {% if transitions %}
+      <form method="post" action="/tickets/{{ ticket.id }}/status">
+        <label>Change status</label>
+        <select name="status">
+          {% for s in transitions %}
+            <option value="{{ s.value }}">{{ s.value | replace('_', ' ') | title }}</option>
+          {% endfor %}
+        </select>
+        <label>Note <span class="hint">(optional)</span></label>
+        <input type="text" name="note" placeholder="e.g. waiting on vendor">
+        <button type="submit">Update status</button>
+      </form>
+      {% else %}
+      <p class="subtitle" style="margin:0">This ticket is closed. No further changes.</p>
+      {% endif %}
+
+      <form method="post" action="/tickets/{{ ticket.id }}/assign"
+            style="margin-top:20px; border-top:1px solid var(--border); padding-top:6px">
+        <label>Assign to</label>
+        <select name="assignee_id">
+          {% for tech in technicians %}
+            <option value="{{ tech.id }}"
+              {% if ticket.assignee_id == tech.id %}selected{% endif %}>
+              {{ tech.name }}
+            </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="secondary">Assign</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

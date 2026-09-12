@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Raise a ticket — Service Desk{% endblock %}
+
+{% block content %}
+<h1>Raise a ticket</h1>
+<p class="subtitle">Priority is calculated from impact and urgency — you don't set it.</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<div class="card" style="max-width:640px">
+  <form method="post" action="/tickets/new">
+    <label>Title <span class="hint">— a short summary</span></label>
+    <input type="text" name="title" required minlength="5" maxlength="200"
+           value="{{ form.title or '' }}"
+           placeholder="Laptop will not connect to the office Wi-Fi">
+
+    <label>Description</label>
+    <textarea name="description"
+              placeholder="What happened, when it started, what you have already tried…">{{ form.description or '' }}</textarea>
+
+    <div class="row">
+      <div>
+        <label>Category</label>
+        <select name="category">
+          {% for c in ["hardware", "software", "network", "access", "account"] %}
+            <option value="{{ c }}" {% if c == form.category %}selected{% endif %}>
+              {{ c | title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Impact <span class="hint">— who is affected</span></label>
+        <select name="impact">
+          <option value="individual">Just me</option>
+          <option value="department">My team</option>
+          <option value="organisation">Everyone</option>
+        </select>
+      </div>
+      <div>
+        <label>Urgency <span class="hint">— how blocked are you</span></label>
+        <select name="urgency">
+          <option value="low">Low — a request</option>
+          <option value="normal" selected>Normal — workaround exists</option>
+          <option value="high">High — badly degraded</option>
+          <option value="critical">Critical — cannot work</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="derived">
+      Priority is derived from your answers using an ITIL impact/urgency matrix.
+      Organisation-wide and critical issues become P1 with a 4 business-hour
+      resolution target; an individual low-urgency request becomes P4 with 72.
+    </div>
+
+    <button type="submit">Raise ticket</button>
+  </form>
+</div>
+{% endblock %}

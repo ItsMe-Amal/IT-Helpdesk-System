@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Service Desk{% endblock %}
+
+{% block content %}
+<div class="login-wrap">
+  <h1>Service Desk</h1>
+  <p class="subtitle">Sign in to raise or manage tickets.</p>
+
+  <div class="card">
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/login">
+      <label>Email</label>
+      <input type="email" name="email" required autofocus
+             value="{{ email or '' }}">
+
+      <label>Password</label>
+      <input type="password" name="password" required>
+
+      <button type="submit">Sign in</button>
+    </form>
+
+    <div class="creds">
+      <strong>Demo accounts</strong><br>
+      priya@example.com · requester-password-1<br>
+      tom@example.com · technician-password-1<br>
+      sam@example.com · manager-password-1
+    </div>
+  </div>
+</div>
+{% endblock %}

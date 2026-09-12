@@ -7,7 +7,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.security import verify_password, create_access_token
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=schemas.TokenOut)
