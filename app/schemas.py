@@ -28,7 +28,7 @@ class TicketCreate(BaseModel):
     category: Optional[str] = Field(default=None, max_length=50)
     impact: Impact
     urgency: Urgency
-    requester_id: int
+
 
 
 class TicketAssign(BaseModel):
@@ -42,7 +42,6 @@ class TicketStatusUpdate(BaseModel):
 
 class CommentCreate(BaseModel):
     body: str = Field(min_length=1)
-    author_id: int
 
 
 class EventOut(BaseModel):
@@ -87,3 +86,15 @@ class TicketDetail(TicketOut):
     """Ticket plus its audit trail and live SLA state."""
     events: list[EventOut] = []
     sla: Optional[SLAOut] = None
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=72)
+    role: str = "requester"
+    department: Optional[str] = None

@@ -7,6 +7,12 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app import models
+from app.security import hash_password
+
+REQUESTER = "requester@test.com"
+OTHER_REQUESTER = "other@test.com"
+TECH = "tech@test.com"
+PASSWORD = "test-password-123"
 
 
 @pytest.fixture
@@ -22,10 +28,12 @@ def client():
 
     db = TestSession()
     db.add_all([
-        models.User(name="Requester", email="r@test.com",
-                    hashed_password="x", role="requester"),
-        models.User(name="Tech", email="t@test.com",
-                    hashed_password="x", role="technician"),
+        models.User(name="Requester", email=REQUESTER,
+                    hashed_password=hash_password(PASSWORD), role="requester"),
+        models.User(name="Tech", email=TECH,
+                    hashed_password=hash_password(PASSWORD), role="technician"),
+        models.User(name="Other", email=OTHER_REQUESTER,
+                    hashed_password=hash_password(PASSWORD), role="requester"),
     ])
     db.commit()
 
@@ -41,85 +49,190 @@ def client():
     db.close()
 
 
-def _new_ticket(client, impact="individual", urgency="normal"):
-    return client.post("/tickets", json={
+def auth(client, email):
+    """Log in and return an Authorization header."""
+    r = client.post("/auth/login", data={"username": email, "password": PASSWORD})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def new_ticket(client, headers, impact="individual", urgency="normal"):
+    return client.post("/tickets", headers=headers, json={
         "title": "Laptop will not power on",
         "impact": impact,
         "urgency": urgency,
-        "requester_id": 1,
     })
 
 
+# ---------- Authentication ----------
+
+def test_unauthenticated_request_rejected(client):
+    assert client.get("/tickets").status_code == 401
+
+
+def test_invalid_token_rejected(client):
+    r = client.get("/tickets", headers={"Authorization": "Bearer not-a-real-token"})
+    assert r.status_code == 401
+
+
+def test_login_returns_bearer_token(client):
+    r = client.post("/auth/login", data={"username": TECH, "password": PASSWORD})
+    assert r.status_code == 200
+    assert r.json()["token_type"] == "bearer"
+
+
+def test_wrong_password_rejected(client):
+    r = client.post("/auth/login", data={"username": TECH, "password": "wrong"})
+    assert r.status_code == 401
+
+
+def test_login_errors_are_indistinguishable(client):
+    """No username enumeration: unknown email and wrong password look identical."""
+    unknown = client.post("/auth/login",
+                          data={"username": "nobody@test.com", "password": PASSWORD})
+    wrong = client.post("/auth/login",
+                        data={"username": TECH, "password": "wrong"})
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.json()["detail"] == wrong.json()["detail"]
+
+
+def test_me_returns_current_user_without_password(client):
+    r = client.get("/auth/me", headers=auth(client, TECH))
+    assert r.json()["email"] == TECH
+    assert "hashed_password" not in r.json()
+
+
+# ---------- Server-controlled fields ----------
+
 def test_create_ticket_derives_priority(client):
-    r = _new_ticket(client, "organisation", "critical")
+    r = new_ticket(client, auth(client, REQUESTER), "organisation", "critical")
     assert r.status_code == 201
     assert r.json()["priority"] == 1
 
 
-def test_reference_is_generated(client):
-    r = _new_ticket(client)
-    assert r.json()["reference"].startswith("INC-")
-
-
 def test_client_cannot_set_priority(client):
-    """Priority is server-controlled; any client value is ignored."""
-    r = client.post("/tickets", json={
+    r = client.post("/tickets", headers=auth(client, REQUESTER), json={
         "title": "Trying to jump the queue",
-        "impact": "individual",
-        "urgency": "low",
-        "requester_id": 1,
+        "impact": "individual", "urgency": "low",
         "priority": 1,
     })
     assert r.json()["priority"] == 4
 
 
+def test_requester_taken_from_token_not_payload(client):
+    """Even if a client sends requester_id, the server ignores it."""
+    headers = auth(client, REQUESTER)
+    r = client.post("/tickets", headers=headers, json={
+        "title": "Raising this as somebody else",
+        "impact": "individual", "urgency": "low",
+        "requester_id": 2,
+    })
+    assert r.json()["requester"]["email"] == REQUESTER
+
+
+def test_reference_is_generated(client):
+    r = new_ticket(client, auth(client, REQUESTER))
+    assert r.json()["reference"].startswith("INC-")
+
+
 def test_short_title_rejected(client):
-    r = client.post("/tickets", json={
-        "title": "hi", "impact": "individual",
-        "urgency": "low", "requester_id": 1,
+    r = client.post("/tickets", headers=auth(client, REQUESTER), json={
+        "title": "hi", "impact": "individual", "urgency": "low",
     })
     assert r.status_code == 422
 
 
+# ---------- Authorisation ----------
+
+def test_requester_cannot_assign_tickets(client):
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.patch("/tickets/1/assign", headers=auth(client, REQUESTER),
+                     json={"assignee_id": 2})
+    assert r.status_code == 403
+
+
+def test_requester_cannot_change_status(client):
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.patch("/tickets/1/status", headers=auth(client, REQUESTER),
+                     json={"status": "in_progress"})
+    assert r.status_code == 403
+
+
+def test_requester_cannot_read_another_users_ticket(client):
+    """IDOR defence: 404, not 403, so ticket existence is not confirmed."""
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.get("/tickets/1", headers=auth(client, OTHER_REQUESTER))
+    assert r.status_code == 404
+
+
+def test_requester_queue_is_scoped_to_own_tickets(client):
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.get("/tickets", headers=auth(client, OTHER_REQUESTER))
+    assert r.json() == []
+
+
+def test_technician_sees_all_tickets(client):
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.get("/tickets", headers=auth(client, TECH))
+    assert len(r.json()) == 1
+
+
+# ---------- Workflow ----------
+
 def test_assign_sets_status(client):
-    _new_ticket(client)
-    r = client.patch("/tickets/1/assign", json={"assignee_id": 2})
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.patch("/tickets/1/assign", headers=auth(client, TECH),
+                     json={"assignee_id": 2})
     assert r.json()["status"] == "assigned"
 
 
-def test_cannot_assign_to_requester(client):
-    _new_ticket(client)
-    r = client.patch("/tickets/1/assign", json={"assignee_id": 1})
+def test_cannot_assign_to_a_requester(client):
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.patch("/tickets/1/assign", headers=auth(client, TECH),
+                     json={"assignee_id": 1})
     assert r.status_code == 400
 
 
 def test_illegal_transition_rejected(client):
-    _new_ticket(client)
-    r = client.patch("/tickets/1/status", json={"status": "closed"})
+    new_ticket(client, auth(client, REQUESTER))
+    r = client.patch("/tickets/1/status", headers=auth(client, TECH),
+                     json={"status": "closed"})
     assert r.status_code == 409
 
 
-def test_audit_trail_records_actions(client):
-    _new_ticket(client)
-    client.patch("/tickets/1/assign", json={"assignee_id": 2})
-    events = client.get("/tickets/1").json()["events"]
-    types = [e["event_type"] for e in events]
-    assert "created" in types and "assigned" in types
+def test_audit_trail_records_the_actor(client):
+    new_ticket(client, auth(client, REQUESTER))
+    client.patch("/tickets/1/assign", headers=auth(client, TECH),
+                 json={"assignee_id": 2})
+    events = client.get("/tickets/1", headers=auth(client, TECH)).json()["events"]
+    assigned = [e for e in events if e["event_type"] == "assigned"][0]
+    assert assigned["actor"]["email"] == TECH
 
 
 def test_technician_comment_sets_first_response(client):
-    _new_ticket(client)
-    client.post("/tickets/1/comments",
-                json={"body": "Looking into it now.", "author_id": 2})
-    assert client.get("/tickets/1").json()["first_response_at"] is not None
+    new_ticket(client, auth(client, REQUESTER))
+    client.post("/tickets/1/comments", headers=auth(client, TECH),
+                json={"body": "Looking into it now."})
+    r = client.get("/tickets/1", headers=auth(client, TECH))
+    assert r.json()["first_response_at"] is not None
+
+
+def test_requester_comment_does_not_set_first_response(client):
+    """Only a technician replying counts as the first response."""
+    new_ticket(client, auth(client, REQUESTER))
+    client.post("/tickets/1/comments", headers=auth(client, REQUESTER),
+                json={"body": "Any update?"})
+    r = client.get("/tickets/1", headers=auth(client, REQUESTER))
+    assert r.json()["first_response_at"] is None
 
 
 def test_queue_orders_by_priority(client):
-    _new_ticket(client, "individual", "low")          # P4
-    _new_ticket(client, "organisation", "critical")   # P1
-    priorities = [t["priority"] for t in client.get("/tickets").json()]
+    headers = auth(client, REQUESTER)
+    new_ticket(client, headers, "individual", "low")
+    new_ticket(client, headers, "organisation", "critical")
+    priorities = [t["priority"] for t in client.get("/tickets", headers=headers).json()]
     assert priorities == sorted(priorities)
 
 
 def test_missing_ticket_returns_404(client):
-    assert client.get("/tickets/999").status_code == 404
+    assert client.get("/tickets/999", headers=auth(client, TECH)).status_code == 404
