@@ -4,7 +4,7 @@
 
 A service desk application where ticket priority is calculated from impact and urgency instead of being chosen by the person raising the ticket, and SLA timers only count business hours.
 
-I built this to learn how real IT service desks work, and because I wanted a project that wasn't just another CRUD app.
+I built this to learn how real IT service desks work, and because I wanted a portfolio project that wasn't just another CRUD app.
 
 ![Ticket queue](docs/queue.png)
 
@@ -14,7 +14,7 @@ I built this to learn how real IT service desks work, and because I wanted a pro
 
 Most ticket systems I looked at let the user pick a priority from a dropdown. The problem with that is obvious once you think about it: everyone picks "High". Their thing is always the most urgent thing.
 
-Real service desks (following ITIL, which is a set of IT service management best practices) don't ask that. They ask two questions that people can answer honestly:
+Real service desks (following ITIL, which is a set of IT service management best practices) don't ask that. They ask two questions people can answer honestly:
 
 - **Impact** — how many people are affected? Just you, your team, or everyone?
 - **Urgency** — how blocked are you? Can you work around it or not?
@@ -30,7 +30,7 @@ The other thing I wanted to get right was the SLA clock. If a ticket is raised a
 - Raise tickets through a web form or a JSON API
 - Priority derived automatically from an ITIL impact/urgency matrix (P1 to P4)
 - SLA targets for first response and resolution, calculated in business hours only (8am–6pm, Mon–Fri, Brisbane time)
-- SLA clock pauses while a ticket is On Hold and the deadline shifts accordingly
+- SLA clock pauses while a ticket is On Hold, and the deadline shifts accordingly
 - Queue view sorted by priority then age, with colour-coded SLA countdowns (on track / at risk / breached)
 - Status changes go through a state machine, so illegal moves are rejected
 - Full audit trail — every action on a ticket is logged with who did it and when
@@ -38,7 +38,8 @@ The other thing I wanted to get right was the SLA clock. If a ticket is raised a
 - Requesters can only see their own tickets
 - Dashboard with open counts, unassigned count, SLA compliance percentage
 - JWT authentication for the API, cookie sessions for the browser
-- 34 automated tests
+- 34 automated tests, run on every push by GitHub Actions
+- Runs in Docker with one command
 
 ---
 
@@ -69,7 +70,7 @@ SLA targets, in business hours:
 | P3 | 4 hours | 24 hours |
 | P4 | 8 hours | 72 hours |
 
-The matrix and the targets are both stored as plain Python dictionaries in `app/sla.py`, so if a client wanted different numbers you'd edit one table rather than rewriting any logic.
+The matrix and the targets are both stored as plain Python dictionaries in `app/sla.py`. If a client wanted different numbers you'd edit one table rather than rewriting any logic.
 
 ---
 
@@ -83,7 +84,7 @@ This was the hardest part of the project and took the longest to get right.
 
 The paused time has to be added back in business hours too, not calendar hours. If you add 4 calendar hours to a Friday 5pm deadline you get 9pm Friday, which is a time the service desk isn't open. It took me a while to spot that.
 
-**Times are stored in UTC, displayed in Brisbane time.** Storing local time would break the maths if the business calendar ever moved somewhere with daylight saving. The conversion happens in a Jinja filter at display time.
+**Times are stored in UTC and displayed in Brisbane time.** Storing local time would break the maths if the business calendar ever moved somewhere with daylight saving. The conversion happens in a Jinja filter at display time.
 
 ---
 
@@ -91,35 +92,55 @@ The paused time has to be added back in business hours too, not calendar hours. 
 
 | What | Why |
 |---|---|
-| **Python 3.12** | Wanted the project to double as scripting practice, since almost every IT support job ad mentions it |
+| **Python 3.12** | I wanted the project to double as scripting practice, since almost every IT support job ad mentions it |
 | **FastAPI** | Generates interactive API docs automatically, and the dependency injection made auth and testing much cleaner |
-| **SQLAlchemy 2.0** | ORM, so I work with Python objects instead of raw SQL strings. Also parameterises queries, which prevents SQL injection |
+| **SQLAlchemy 2.0** | ORM, so I work with Python objects instead of raw SQL strings. It also parameterises queries, which prevents SQL injection |
 | **SQLite** | No database server to install. Only the connection string changes to move to PostgreSQL |
 | **Jinja2** | Server-rendered HTML. No JavaScript build step, and it autoescapes output, which stops XSS |
 | **bcrypt** | Password hashing with a per-user salt |
 | **python-jose** | JWT signing and verification |
 | **pytest** | Test suite |
 | **Plain CSS** | Hand-written, no framework, so it looks like an internal tool rather than a Bootstrap template |
+| **Docker** | Runs the same way on any machine. The container runs as a non-root user, and secrets are injected at runtime rather than baked into the image |
+| **GitHub Actions** | Runs the test suite on a clean Ubuntu machine on every push, which catches anything that only worked because of something installed locally |
 
 ---
 
 ## Getting started
 
-You need Python 3.11 or newer.
+### Option 1: Docker (quickest)
+
+You need Docker Desktop installed and running.
 
 ```bash
-# Clone and enter the project
 git clone https://github.com/ItsMe-Amal/IT-Helpdesk-System.git
 cd IT-Helpdesk-System
 
-# Create and activate a virtual environment
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+# paste that output as SECRET_KEY in .env
+
+docker compose up --build
+```
+
+Open **http://127.0.0.1:8000**. The container seeds its own database on first run, and the data lives in a named volume so it survives rebuilds.
+
+### Option 2: Run it locally
+
+You need Python 3.11 or newer.
+
+```bash
+git clone https://github.com/ItsMe-Amal/IT-Helpdesk-System.git
+cd IT-Helpdesk-System
+
+# Virtual environment
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Dependencies
 pip install -r requirements.txt
 
-# Set up your environment file
+# Environment file
 cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 # paste that output as SECRET_KEY in .env
@@ -131,7 +152,7 @@ python seed.py
 uvicorn app.main:app --reload
 ```
 
-Then open **http://127.0.0.1:8000**
+Open **http://127.0.0.1:8000**.
 
 ### Test accounts
 
@@ -147,11 +168,15 @@ These only exist in a local throwaway database. Sign in as Tom to see the full t
 
 Interactive API documentation is at **http://127.0.0.1:8000/docs** — FastAPI generates it from the code. Click **Authorize**, log in with one of the accounts above, and you can call every endpoint from the browser.
 
+The JSON API lives under `/api` (for example `/api/tickets`), and the web pages live under `/` (for example `/tickets/1`). See "Things that went wrong" for why.
+
 ---
 
 ## Project structure
 
 ```
+.github/workflows/
+└── tests.yml        # GitHub Actions: run pytest on every push
 app/
 ├── main.py          # App setup, wires the routers together
 ├── config.py        # Reads settings from environment variables
@@ -160,7 +185,7 @@ app/
 ├── schemas.py       # Pydantic models — what the API accepts and returns
 ├── sla.py           # Priority matrix and business-hours SLA logic
 ├── security.py      # Password hashing and JWT tokens
-├── deps.py          # Auth dependencies for API and web
+├── deps.py          # Auth dependencies for API (bearer) and web (cookie)
 ├── crud.py          # Shared helpers: reference numbers, audit logging
 ├── templating.py    # Jinja setup and custom filters
 ├── web.py           # HTML page routes
@@ -172,10 +197,14 @@ app/
 tests/
 ├── test_sla.py      # SLA and priority logic
 └── test_api.py      # API behaviour, auth, and access control
-seed.py              # Creates test users
+docs/                # Screenshots
+seed.py              # Creates test users (safe to run repeatedly)
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env.example         # Template for the environment file
+requirements.txt
 ```
-
-The API lives under `/api` and the web pages under `/` so the two don't collide. I found that out the hard way — see the notes further down.
 
 ---
 
@@ -195,7 +224,9 @@ This is the part I cared about most, since I'm coming from a networks and securi
 
 **Cookies.** The browser session cookie is `httpOnly`, so JavaScript can't read the token even if an XSS hole existed, and `SameSite=Lax`, which blocks the basic CSRF attack.
 
-**Secrets.** The signing key comes from an environment variable and `.env` is gitignored. The app refuses to start if `SECRET_KEY` isn't set, rather than falling back to some default — a hardcoded fallback secret is how this kind of thing leaks in real projects.
+**Secrets.** The signing key comes from an environment variable, `.env` is gitignored and dockerignored, and the app refuses to start if `SECRET_KEY` isn't set rather than falling back to some default. A hardcoded fallback secret is how this kind of thing leaks in real projects.
+
+**Container.** The Docker image runs as a non-root user. Containers run as root by default, which means anyone who compromises the app is root inside the container. Secrets are passed in at runtime with `--env-file`, never copied into the image.
 
 ---
 
@@ -207,7 +238,7 @@ pytest -v
 
 34 tests. They run against a fresh in-memory database, so they never touch the real one and every test starts clean. FastAPI's dependency override lets me swap the database with one line, without changing any application code.
 
-The tests are grouped by what they're checking:
+The tests are grouped by what they check:
 
 - **SLA logic** — the priority matrix, business-hours calculation, weekend and overnight handling
 - **Authentication** — unauthenticated requests, invalid tokens, wrong passwords, and that login errors are indistinguishable
@@ -218,6 +249,20 @@ The tests are grouped by what they're checking:
 I tried to write tests that describe business rules rather than implementation details. For example `test_sla_clock_pauses_overnight` says what the system should do, not how it does it — so I could rewrite the SLA function entirely and the test would still tell me whether it's correct.
 
 The tests take about 24 seconds, almost all of it bcrypt hashing passwords in the test fixtures. bcrypt is slow on purpose, so that's the security working rather than a problem to fix.
+
+**CI.** Every push to `main` runs the suite on a clean Ubuntu runner via GitHub Actions. That proves the project builds from nothing, not just on my laptop where everything is already installed. The badge at the top of this README shows the latest result.
+
+---
+
+## Docker notes
+
+The Dockerfile copies `requirements.txt` and installs dependencies *before* copying the application code. Docker caches each instruction as a layer, so a code change only rebuilds the last few layers instead of reinstalling 30 packages.
+
+The database lives in a named volume (`helpdesk-data`) mounted at `/app/data`. The container is disposable; the volume isn't. `docker compose down` then `up` keeps your tickets. `docker compose down -v` wipes them.
+
+The data directory is created and chowned to the non-root user in the Dockerfile *before* the `USER` instruction. This matters: Docker initialises a new volume using whatever ownership that path has in the image, so if the directory were root-owned the app couldn't write the database.
+
+The seed script runs on every container start. It's idempotent — it checks whether users already exist and skips if they do — so a fresh clone gets a working login with no extra steps, and restarts don't create duplicates.
 
 ---
 
@@ -237,6 +282,8 @@ The test suite caught this immediately. Without it I would have shipped a broken
 
 **`default=utcnow` vs `default=utcnow()`.** Without the parentheses, SQLAlchemy calls the function at insert time, which is what you want. With them, you pass one fixed timestamp captured when the file loaded, and every row gets the same value. Easy to miss and hard to notice later.
 
+**The `docker` command wasn't found after installing Docker Desktop.** The terminal I had open predated the install, so it didn't have the updated PATH. A new terminal fixed it. Obvious in hindsight, but worth knowing that a shell only reads its PATH when it starts.
+
 ---
 
 ## Known limitations
@@ -251,6 +298,7 @@ Being upfront about what isn't finished:
 - **No email notifications**, no attachments, no knowledge base, no asset linking.
 - **`create_all()` instead of real migrations.** Changing a column means deleting the database file. A production app would use Alembic.
 - **`secure=False` on the session cookie**, which is correct for local HTTP but must be `True` behind HTTPS.
+- **SQLite in the container.** Fine for a demo, but a real deployment would use PostgreSQL in its own container.
 
 ---
 
@@ -259,8 +307,7 @@ Being upfront about what isn't finished:
 - CSRF tokens on all forms
 - Alembic migrations
 - Move the shared ticket logic out of both routers into a service layer
-- Docker and GitHub Actions CI
-- PostgreSQL instead of SQLite
+- PostgreSQL instead of SQLite, as a second Compose service
 - Email notification on assignment and SLA breach
 - Reporting: average resolution time by category, technician workload
 
