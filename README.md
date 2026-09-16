@@ -1,5 +1,7 @@
 # IT Helpdesk System
 
+[![tests](https://github.com/ItsMe-Amal/IT-Helpdesk-System/actions/workflows/tests.yml/badge.svg)](https://github.com/ItsMe-Amal/IT-Helpdesk-System/actions/workflows/tests.yml)
+
 A service desk application where ticket priority is calculated from impact and urgency instead of being chosen by the person raising the ticket, and SLA timers only count business hours.
 
 I built this to learn how real IT service desks work, and because I wanted a project that wasn't just another CRUD app.
